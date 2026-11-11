@@ -1,167 +1,138 @@
 # Needle Subtitle
 
-A simple subtitle generator using **Cactus Needle** and **Silero VAD**.
+A multilingual subtitle generator for audio and video, powered by **Cactus Needle / Needle 3**, **Udgam Labs Shruti**, and **Silero VAD**. The Gradio interface offers a full-width dark design with purple accents, a transcription progress indicator, and downloadable subtitle files.
 
-It generates three subtitle formats from video or audio files:
+## Features
 
-- **YouTube / Horizontal** — sentence-level subtitles
-- **Shorts / Reels** — short, punchy subtitle cues
-- **Word Level** — one cue per word
+- **29 language choices:** English, Hindi, Bengali first, followed by the other languages alphabetically.
+- **Two speech-to-text backends:** Needle for seven European languages and Shruti (via Cactus `Whistle`) for 22 Indian languages.
+- **Long recordings:** FFmpeg converts input to 16 kHz mono WAV; Silero VAD helps choose boundaries for chunks of up to 29 seconds.
+- **Word timestamps:** Subtitle timing is based on the word timestamps returned by the model.
+- **Local model cache:** Shruti model files are downloaded on first use and cached in `./model/<language>/`.
+- **Stop control:** Requests a stop between processing steps; an in-progress transcription or download may need to finish its current operation.
+- **Six output tabs:** YouTube SRT, Shorts/Reels SRT, word-level SRT, transcript TXT, original model response JSON, and a ZIP containing the exports.
 
-## Model
+## Supported languages
 
-This project uses **Cactus Needle / Needle 3**.
+**Needle backend (7):** English, Dutch, French, German, Italian, Polish, Spanish.
 
-**Model:**  
-https://huggingface.co/Cactus-Compute/needle3
+**Shruti backend (22):** Assamese, Bengali, Bodo, Dogri, Gujarati, Hindi, Kannada, Kashmiri, Konkani, Maithili, Malayalam, Manipuri, Marathi, Nepali, Odia, Punjabi, Sanskrit, Santali, Sindhi, Tamil, Telugu, Urdu.
 
-**Original project / credit:**  
-https://github.com/cactus-compute/needle
-
-Please refer to the upstream Cactus project and model page for the applicable model, software, and usage terms.
+The language menu places **English, Hindi, Bengali** first, then lists the remaining languages alphabetically. Model accuracy and availability vary by language.
 
 ## Requirements
 
-- Windows
-- Python 3.10+ recommended
-- FFmpeg installed and available in system PATH
-- Internet connection for the first model download
+- Python 3.10+ (check the supported Python versions for the installed Cactus packages)
+- FFmpeg installed and available on `PATH`
+- Internet access for initial package installation and model downloads
+- Enough free disk space for the selected models and temporary audio
 
-## Installation
-
-### 1. Clone the repository
+### Install
 
 ```bash
 git clone https://github.com/NeuralFalconYT/needle-subtitle.git
 cd needle-subtitle
-```
-
-### 2. Install Python dependencies
-
-```bash
 python -m pip install -r requirements.txt
 ```
 
-Current dependencies:
+The application imports `needle` for the original seven languages and `Whistle` from `cactus` for Shruti. If you encounter `ModuleNotFoundError: No module named 'cactus'`, install the Cactus compute runtime compatible with your OS and Python version:
 
-```text
-cactus-needle==3.1.0
-silero-vad==6.2.3
-gradio==5.50.0
+```bash
+python -m pip install cactus-compute==4.1.0
 ```
 
-## Install FFmpeg
+For Needle, use the compatible `cactus-needle` version available for your environment. Check the repository's `requirements.txt` before installing; its current version pins may need adjustment.
 
-FFmpeg is required for audio/video processing.
-
-Download FFmpeg:
-
-https://ffmpeg.org/download.html
-
-After installing, add the FFmpeg `bin` directory to your Windows **PATH**.
-
-Verify the installation:
+Install FFmpeg from https://ffmpeg.org/download.html and verify:
 
 ```bash
 ffmpeg -version
 ```
 
-If installed correctly, FFmpeg version information will be displayed.
-
-## Run
-
-Start the application:
+### Run
 
 ```bash
 python app.py
 ```
 
-Then open the local Gradio URL shown in the terminal, usually:
-
-```text
-http://127.0.0.1:7860
-```
+Open the URL printed by Gradio, typically `http://127.0.0.1:7860` when running locally.
 
 ## Usage
 
-You can either enter the full path to a video/audio file or drag and drop a file into the Gradio interface.
+1. Paste an audio/video file path when running locally, or upload a file through the web interface.
+2. Select a language. The app selects Needle or Shruti based on the language.
+3. Optionally adjust YouTube character limits, Shorts words per cue, uppercase, and trailing punctuation settings.
+4. Click **Generate Subtitles**. Watch the progress indicator and download the files from the output tabs when finished.
 
-Select the language and start subtitle generation.
+**Note:** The local path field is hidden on Hugging Face Spaces. Upload a file instead.
 
-## Output
+## Outputs
 
-When a file path is entered directly, subtitle files are saved next to the input file.
-
-For drag-and-drop uploads, outputs are saved under:
-
-```text
-./needle_output/<filename>/
-```
-
-## Supported Languages
-
-- English
-- French
-- Spanish
-- German
-- Dutch
-- Italian
-- Polish
-
-## How It Works
+The current application writes outputs under:
 
 ```text
-Video / Audio
-      ↓
-FFmpeg → 16 kHz mono WAV
-      ↓
-Silero VAD
-      ↓
-Smart ≤29 second chunks
-      ↓
-Cactus Needle / Whistle
-      ↓
-Word timestamps
-      ↓
-SRT generation
-      ├── YouTube / Horizontal
-      ├── Shorts / Reels
-      └── Word Level
+./needle_output/<input-file-stem>/
 ```
 
-Long audio is automatically divided into speech-aware chunks before transcription.
+The UI exposes six tabs:
 
-## Credits
+| Tab | Output |
+| --- | --- |
+| 1 · YouTube / Horizontal | Single-line, sentence-style `.srt` |
+| 2 · Shorts / Reels | Short, typically 1–3-word `.srt` cues |
+| 3 · Word Level | One-word-per-cue `.srt` |
+| 4 · Transcript TXT | Plain-text transcript |
+| 5 · JSON Log | Original model responses, with chunk context |
+| 6 · Export ZIP | Archive containing the generated exports |
 
-This project uses:
+The JSON log is useful for inspecting the model's returned timestamps and transcription results. If a chunk fails, check the console/log output.
 
-### Cactus Needle / Needle 3
+## Processing pipeline
 
-https://huggingface.co/Cactus-Compute/needle3
+```text
+Audio / Video
+    |
+    v
+FFmpeg: 16 kHz, mono, 16-bit WAV
+    |
+    v
+Silero VAD: speech boundaries
+    |
+    v
+Chunks up to 29 seconds
+    |
+    +--> Needle (English, French, Spanish, German, Dutch, Italian, Polish)
+    |
+    +--> Shruti / Cactus Whistle (22 languages)
+    |
+    v
+Word-level timestamps + original responses
+    |
+    v
+YouTube SRT / Shorts SRT / Word SRT / TXT / JSON / ZIP
+```
 
-### Cactus Needle Source Repository
+For Shruti, model files are cached under `model/<language>/`. The Hindi model uses `udgamlabs/Shruti`; other languages use language-specific repositories. If a repository name or file name differs from the naming convention expected by the app, download may fail and the mapping in `app.py` will need correction.
 
-https://github.com/cactus-compute/needle
+## Troubleshooting
 
-### Silero VAD
+- **FFmpeg not found:** Install FFmpeg and add its `bin` folder to your system `PATH`.
+- **Cactus import fails:** Verify that `cactus-compute` is installed in the same Python environment running `app.py`.
+- **Model download fails:** Check your internet connection and confirm the model repository and file names on Hugging Face.
+- **No words returned:** Inspect the model response JSON (when generated) and terminal output; some audio or model/language combinations may not produce word timestamps.
+- **Long transcription:** The application processes chunks sequentially, so total time depends on audio duration, model and hardware.
 
-https://github.com/snakers4/silero-vad
+## Model credits and licensing
 
-## Licensing
+This project is an application/wrapper around third-party models and software. The original authors retain their respective rights. Review the upstream licenses and model usage terms before redistribution or commercial use.
 
-This repository is an application/wrapper around third-party software and models.
-
-The third-party components used by this project may have their own separate licenses and terms. Please review the upstream sources before redistribution or other uses:
-
-- Cactus Needle / Needle 3:  
-  https://huggingface.co/Cactus-Compute/needle3
-
-- Cactus Needle source:  
-  https://github.com/cactus-compute/needle
-
-- Silero VAD:  
-  https://github.com/snakers4/silero-vad
+- **Cactus Needle / Needle 3:** https://huggingface.co/Cactus-Compute/needle3
+- **Needle source:** https://github.com/cactus-compute/needle
+- **Udgam Labs Shruti:** https://huggingface.co/udgamlabs
+- **Cactus compute runtime:** https://github.com/cactus-compute
+- **Silero VAD:** https://github.com/snakers4/silero-vad
+- **Gradio:** https://www.gradio.app/
 
 ## Disclaimer
 
-This project does not claim ownership of the third-party models, runtimes, or libraries used by the application. All applicable rights and terms remain with their respective upstream authors and projects.
+This repository does not claim ownership of the third-party models, runtimes, or libraries used by the application. All applicable rights and terms remain with their respective upstream authors and projects.
