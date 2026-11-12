@@ -1120,7 +1120,7 @@ def build_ui():
                             elem_classes=["srt"],
                         )
 
-                    with gr.Tab("4 · Transcript Text"):
+                    with gr.Tab("4 · Transcript TXT"):
                         transcript_file = gr.File(label="Transcript")
                         transcript_preview = gr.Textbox(
                             label="Transcript Preview", lines=12, max_lines=12,
@@ -1129,7 +1129,7 @@ def build_ui():
                             elem_classes=["srt"],
                         )
 
-                    with gr.Tab("5 · JSON Log"):
+                    with gr.Tab("5 · JSON LOG"):
                         json_file = gr.File(label="Original Model Response JSON")
                         json_preview = gr.Textbox(
                             label="Raw JSON Preview", lines=12, max_lines=12,
