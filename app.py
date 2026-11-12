@@ -604,7 +604,7 @@ footer {
 /* HERO */
 #hero {
     text-align: center;
-    padding: 38px 10px 26px;
+    padding: 10px 10px 8px;
 }
 
 #hero .title {
@@ -620,7 +620,7 @@ footer {
 }
 
 #hero .tagline {
-    margin: 10px 0 20px;
+    margin: 6px 0 12px;
     color: #8b8b9a;
     font-size: 15px;
 }
@@ -649,6 +649,53 @@ footer {
 #hero .links a:hover {
     border-color: #8b7cf6;
     background: rgba(139,124,246,.12);
+}
+
+/* SUPPORTED LANGUAGES */
+#langs {
+    max-width: 1100px;
+    margin: 0 auto 14px !important;
+}
+
+.lang-box {
+    text-align: center;
+    padding: 4px 10px;
+}
+
+.lang-title {
+    color: #c9c9d6;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+}
+
+.lang-group {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.lang-group b {
+    color: #b9aeff;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-right: 6px;
+}
+
+.lang-group span {
+    padding: 3px 11px;
+    border-radius: 999px;
+    font-size: 12px;
+    color: #dcdcea;
+    background: rgba(255,255,255,.04);
+    border: 1px solid rgba(255,255,255,.10);
 }
 
 /* GLASS CARDS */
@@ -860,6 +907,23 @@ def status_html(message, percent=0, active=False):
         '</div>'
     )
 
+
+def languages_html():
+    """Supported-language chips, built from the same dictionaries as the dropdown."""
+    western = ["English"] + sorted(n for n in WHISTLE_LANGUAGES if n != "English")
+    indian = sorted(SHRUTI_LANGUAGES)
+
+    def chips(items):
+        return "".join(f"<span>{escape_html(n)}</span>" for n in items)
+
+    return (
+        '<div class="lang-box">'
+        '<div class="lang-title">Supported Languages</div>'
+        f'<div class="lang-group"><b>Whistle</b>{chips(western)}</div>'
+        f'<div class="lang-group"><b>Shruti</b>{chips(indian)}</div>'
+        '</div>'
+    )
+
 # ============================================================
 # GRADIO HANDLER
 # ============================================================
@@ -1041,6 +1105,8 @@ def build_ui():
             </div>
         </div>
         """)
+
+        gr.HTML(languages_html(), elem_id="langs")
 
         with gr.Row(elem_id="main-row", equal_height=False):
 
