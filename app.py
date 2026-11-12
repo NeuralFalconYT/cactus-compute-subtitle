@@ -1010,7 +1010,7 @@ def build_ui():
                 Sentence SRT · Short SRT · Word Level SRT
             </p>
             <div class="links">
-                <a href="https://github.com/NeuralFalconYT/needle-subtitle" target="_blank">GitHub</a>
+                <a href="https://github.com/NeuralFalconYT/cactus-compute-subtitle" target="_blank">GitHub</a>
                 <a href="https://huggingface.co/Cactus-Compute/whistle" target="_blank">Whistle Model</a>
                 <a href="https://huggingface.co/udgamlabs" target="_blank">Shruti Models</a>
             </div>
