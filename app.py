@@ -562,6 +562,12 @@ CSS = """
     --color-accent: #8b7cf6;
 }
 
+/* Always reserve space for the scrollbar so the layout never shifts sideways */
+html {
+    overflow-y: scroll !important;
+    scrollbar-gutter: stable;
+}
+
 html, body {
     margin: 0 !important;
     width: 100% !important;
@@ -688,15 +694,6 @@ input:focus {
 }
 
 /* FIXED HEIGHT: NO PAGE JUMPING */
-#status textarea {
-    height: 55px !important;
-    min-height: 55px !important;
-    max-height: 55px !important;
-    overflow-y: auto !important;
-    resize: none !important;
-    color: #b9aeff !important;
-}
-
 #log textarea {
     height: 170px !important;
     min-height: 170px !important;
@@ -706,12 +703,17 @@ input:focus {
     color: #aab4c4 !important;
 }
 
-#status textarea,
 #log textarea,
 .srt textarea {
     font-family: 'JetBrains Mono', 'Consolas', 'Courier New', monospace !important;
     font-size: 12.5px !important;
     background: #0a0a0e !important;
+}
+
+/* Fixed-height wrapper so the preview box never fights lines=12 */
+.srt {
+    height: 380px !important;
+    min-height: 380px !important;
 }
 
 .srt textarea {
@@ -721,6 +723,16 @@ input:focus {
     max-height: 330px !important;
     overflow-y: auto !important;
     resize: none !important;
+}
+
+/* Every tab panel has the same height, so switching tabs never resizes the card */
+.tabitem {
+    min-height: 520px !important;
+}
+
+/* Same size for empty and filled file boxes */
+.card [data-testid="file"] {
+    min-height: 90px;
 }
 
 /* BUTTONS */
@@ -983,6 +995,19 @@ def request_stop():
     return status_html("Stopping after current chunk...", active=True)
 
 # ============================================================
+# TAB / FILE LAYOUT STABILITY
+# ============================================================
+# Render all tab contents at startup (needs a recent Gradio); ignored on older versions.
+TAB_KWARGS = (
+    {"render_children": True}
+    if "render_children" in inspect.signature(gr.Tab.__init__).parameters
+    else {}
+)
+
+# Fixed height for file boxes so empty and filled states are the same size.
+FILE_HEIGHT = 120
+
+# ============================================================
 # ORIGINAL-STYLE FULL-SCREEN WEBUI
 # ============================================================
 def build_ui():
@@ -1096,32 +1121,32 @@ def build_ui():
                 )
 
                 with gr.Tabs():
-                    with gr.Tab("1 · Word Level SRT"):
-                        word_file = gr.File(label="Word Level SRT")
+                    with gr.Tab("1 · Word Level SRT", **TAB_KWARGS):
+                        word_file = gr.File(label="Word Level SRT", height=FILE_HEIGHT)
                         word_preview = gr.Textbox(
                             label="Preview", lines=12, max_lines=12,
                             interactive=False, autoscroll=False,
                             elem_classes=["srt"],
                         )
 
-                    with gr.Tab("2 · Sentence SRT"):
-                        sentence_file = gr.File(label="Sentence SRT")
+                    with gr.Tab("2 · Sentence SRT", **TAB_KWARGS):
+                        sentence_file = gr.File(label="Sentence SRT", height=FILE_HEIGHT)
                         sentence_preview = gr.Textbox(
                             label="Preview", lines=12, max_lines=12,
                             interactive=False, autoscroll=False,
                             elem_classes=["srt"],
                         )
 
-                    with gr.Tab("3 · Short SRT"):
-                        short_file = gr.File(label="Short SRT")
+                    with gr.Tab("3 · Short SRT", **TAB_KWARGS):
+                        short_file = gr.File(label="Short SRT", height=FILE_HEIGHT)
                         short_preview = gr.Textbox(
                             label="Preview", lines=12, max_lines=12,
                             interactive=False, autoscroll=False,
                             elem_classes=["srt"],
                         )
 
-                    with gr.Tab("4 · Transcript TXT"):
-                        transcript_file = gr.File(label="Transcript")
+                    with gr.Tab("4 · Transcript TXT", **TAB_KWARGS):
+                        transcript_file = gr.File(label="Transcript", height=FILE_HEIGHT)
                         transcript_preview = gr.Textbox(
                             label="Transcript Preview", lines=12, max_lines=12,
                             interactive=False, autoscroll=False,
@@ -1129,16 +1154,16 @@ def build_ui():
                             elem_classes=["srt"],
                         )
 
-                    with gr.Tab("5 · JSON LOG"):
-                        json_file = gr.File(label="Original Model Response JSON")
+                    with gr.Tab("5 · JSON LOG", **TAB_KWARGS):
+                        json_file = gr.File(label="Original Model Response JSON", height=FILE_HEIGHT)
                         json_preview = gr.Textbox(
                             label="Raw JSON Preview", lines=12, max_lines=12,
                             interactive=False, autoscroll=False,
                             elem_classes=["srt"],
                         )
 
-                    with gr.Tab("6 · Export ZIP"):
-                        zip_file = gr.File(label="Download All Outputs (.zip)")
+                    with gr.Tab("6 · Export ZIP", **TAB_KWARGS):
+                        zip_file = gr.File(label="Download All Outputs (.zip)", height=FILE_HEIGHT)
                         gr.Markdown("Includes 3 SRT files, transcript TXT and original model JSON.")
 
         generate.click(
