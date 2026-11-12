@@ -604,7 +604,7 @@ footer {
 /* HERO */
 #hero {
     text-align: center;
-    padding: 10px 10px 8px;
+    padding: 10px 10px 0;
 }
 
 #hero .title {
@@ -626,6 +626,7 @@ footer {
 }
 
 #hero .links {
+    margin-top: 14px;
     display: flex;
     gap: 10px;
     justify-content: center;
@@ -654,12 +655,15 @@ footer {
 /* SUPPORTED LANGUAGES */
 #langs {
     max-width: 1100px;
-    margin: 0 auto 14px !important;
+    margin: -22px auto 14px !important;   /* pulls it up under the link buttons */
+    padding: 0 !important;
+    border: none !important;
+    min-height: 0 !important;
 }
 
 .lang-box {
     text-align: center;
-    padding: 4px 10px;
+    padding: 0 10px;
 }
 
 .lang-title {
@@ -918,7 +922,7 @@ def languages_html():
 
     return (
         '<div class="lang-box">'
-        '<div class="lang-title">Supported Languages</div>'
+        '<div class="lang-title">Supported 29 Languages</div>'
         f'<div class="lang-group"><b>Whistle</b>{chips(western)}</div>'
         f'<div class="lang-group"><b>Shruti</b>{chips(indian)}</div>'
         '</div>'
@@ -1093,11 +1097,6 @@ def build_ui():
         gr.HTML("""
         <div id="hero">
             <h1 class="title">CACTUS-COMPUTE SUBTITLE</h1>
-            <p class="tagline">
-                Cactus-Compute Whistle + Shruti |
-                29 Languages |
-                Sentence SRT · Short SRT · Word Level SRT
-            </p>
             <div class="links">
                 <a href="https://github.com/NeuralFalconYT/cactus-compute-subtitle" target="_blank">GitHub</a>
                 <a href="https://huggingface.co/Cactus-Compute/whistle" target="_blank">Whistle Model</a>
