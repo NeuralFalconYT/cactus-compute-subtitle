@@ -1,803 +1,542 @@
-```python
+
+from __future__ import annotations
+
 import os
 import sys
 import shutil
 import subprocess
+import urllib.request
 import zipfile
 import tempfile
-import urllib.request
-import time
 from pathlib import Path
 
-
 # ============================================================
-# Configuration
+# CACTUS COMPUTE SUBTITLE - WINDOWS INSTALLER
 # ============================================================
 
-PROJECT_DIR = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent
+VENV = ROOT / ".venv"
+REQUIREMENTS = ROOT / "requirements.txt"
+APP = ROOT / "app.py"
+FFMPEG_DIR = ROOT / "FFmpeg"
+LAUNCHER = ROOT / "run_cactus_subtitle.bat"
 
-VENV_DIR = PROJECT_DIR / ".venv"
-FFMPEG_DIR = PROJECT_DIR / "FFmpeg"
-REQUIREMENTS_FILE = PROJECT_DIR / "requirements.txt"
-BAT_FILE = PROJECT_DIR / "run_needle_subtitle.bat"
-
-# Gyan FFmpeg Windows build
 FFMPEG_URL = (
     "https://www.gyan.dev/ffmpeg/builds/"
     "ffmpeg-release-essentials.zip"
 )
 
-FFMPEG_ZIP = PROJECT_DIR / "ffmpeg_download.zip"
+
+def header(message):
+    print("\n" + "=" * 65)
+    print(message)
+    print("=" * 65)
 
 
-# ============================================================
-# Helpers
-# ============================================================
-
-def print_header(text):
-    print()
-    print("=" * 70)
-    print(text)
-    print("=" * 70)
+def run(*args):
+    command = [str(arg) for arg in args]
+    print("\n>>>", subprocess.list2cmdline(command))
+    subprocess.run(command, check=True)
 
 
-def run_command(command):
-    print()
-    print(
-        ">>>",
-        " ".join(
-            f'"{x}"' if " " in str(x) else str(x)
-            for x in command
+def check_windows():
+    if os.name != "nt":
+        raise RuntimeError(
+            "This installer is intended for Windows."
         )
-    )
 
-    result = subprocess.run(command)
 
-    if result.returncode != 0:
-        print()
-        print("ERROR: Command failed.")
-        sys.exit(result.returncode)
+def check_project():
+    header("Checking project files")
+
+    for path in (APP, REQUIREMENTS):
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"Required file missing: {path}"
+            )
+
+    print("app.py found")
+    print("requirements.txt found")
 
 
 # ============================================================
-# Python / venv
+# VIRTUAL ENVIRONMENT SELECTION
 # ============================================================
+
+def choose_environment():
+    header("Python Installation Mode")
+
+    print("Do you want to use a virtual environment?")
+    print()
+    print("[Y] Yes - Create/use .venv (Recommended)")
+    print("[N] No  - Use current Python environment")
+    print()
+
+    while True:
+        choice = input(
+            "Use virtual environment? (Y/N): "
+        ).strip().lower()
+
+        if choice in ("y", "yes"):
+            print("\nSelected: Virtual environment")
+            return True
+
+        if choice in ("n", "no"):
+            print("\nSelected: Current Python environment")
+            return False
+
+        print("Invalid choice. Enter Y or N.")
+
 
 def get_venv_python():
-
-    if os.name == "nt":
-        return VENV_DIR / "Scripts" / "python.exe"
-
-    return VENV_DIR / "bin" / "python"
+    return VENV / "Scripts" / "python.exe"
 
 
-def create_virtual_environment():
+def setup_venv():
+    header("1. Setting up virtual environment")
 
-    print_header("1. Creating Python virtual environment")
+    python = get_venv_python()
 
-    python_exe = get_venv_python()
+    if python.is_file():
+        result = subprocess.run(
+            [str(python), "-c", "import sys"],
+            capture_output=True,
+            text=True,
+        )
 
-    if python_exe.exists():
+        if result.returncode != 0:
+            raise RuntimeError(
+                "Existing .venv is broken. "
+                "Rename or delete it and rerun the installer."
+            )
 
-        print("Virtual environment already exists:")
-        print(f"  {VENV_DIR}")
-        return
+        print("Existing virtual environment detected.")
+        print("Reusing:", VENV)
+        return python
 
-    print("Creating .venv ...")
+    print("Creating virtual environment...")
 
-    run_command([
-        sys.executable,
-        "-m",
-        "venv",
-        str(VENV_DIR)
-    ])
+    run(sys.executable, "-m", "venv", VENV)
+
+    if not python.is_file():
+        raise RuntimeError(
+            "Failed to create virtual environment."
+        )
 
     print("Virtual environment created.")
+    return python
+
+
+def setup_python(use_venv):
+    if use_venv:
+        return setup_venv()
+
+    header("1. Using current Python environment")
+
+    python = Path(sys.executable).resolve()
+
+    print("Python:", python)
+    print("No virtual environment will be created.")
+    print()
+    print(
+        "WARNING: Dependencies will be installed "
+        "into this Python environment."
+    )
+
+    return python
 
 
 # ============================================================
-# Requirements
+# DEPENDENCIES
 # ============================================================
 
-def install_requirements():
+def install_dependencies(python):
+    header("2. Installing Python dependencies")
 
-    print_header("2. Installing Python dependencies")
+    print("Using Python:", python)
 
-    if not REQUIREMENTS_FILE.exists():
-
-        print()
-        print("ERROR: requirements.txt was not found.")
-        print(f"Expected: {REQUIREMENTS_FILE}")
-        sys.exit(1)
-
-    python_exe = get_venv_python()
-
-    if not python_exe.exists():
-
-        print("ERROR: Virtual environment Python was not found.")
-        sys.exit(1)
-
-    print("Upgrading pip...")
-
-    run_command([
-        str(python_exe),
+    run(
+        python,
         "-m",
         "pip",
-        "install",
-        "--upgrade",
-        "pip",
-        "setuptools",
-        "wheel"
-    ])
+        "--version",
+    )
 
-    print()
-    print("Installing requirements...")
-
-    run_command([
-        str(python_exe),
+    run(
+        python,
         "-m",
         "pip",
         "install",
         "-r",
-        str(REQUIREMENTS_FILE)
-    ])
+        REQUIREMENTS,
+    )
 
-    print()
-    print("Python dependencies installed successfully.")
+    print("\nDependencies installed successfully.")
 
 
 # ============================================================
-# FFmpeg detection
+# FFMPEG
 # ============================================================
 
-def find_local_ffmpeg():
+def valid_executable(path):
+    if not path or not Path(path).is_file():
+        return False
 
-    candidates = [
-        FFMPEG_DIR / "bin" / "ffmpeg.exe",
-        FFMPEG_DIR / "ffmpeg.exe",
-    ]
+    try:
+        result = subprocess.run(
+            [str(path), "-version"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=15,
+        )
 
-    for path in candidates:
+        return result.returncode == 0
 
-        if path.exists():
-            return path
+    except (OSError, subprocess.TimeoutExpired):
+        return False
 
+
+def find_ffmpeg():
+    # Prefer the project's local FFmpeg installation.
     if FFMPEG_DIR.exists():
+        for ffmpeg in FFMPEG_DIR.rglob("ffmpeg.exe"):
+            ffprobe = ffmpeg.with_name("ffprobe.exe")
 
-        for path in FFMPEG_DIR.rglob("ffmpeg.exe"):
-            return path
+            if (
+                valid_executable(ffmpeg)
+                and valid_executable(ffprobe)
+            ):
+                return ffmpeg.parent
 
-    return None
-
-
-def find_local_ffprobe():
-
-    candidates = [
-        FFMPEG_DIR / "bin" / "ffprobe.exe",
-        FFMPEG_DIR / "ffprobe.exe",
-    ]
-
-    for path in candidates:
-
-        if path.exists():
-            return path
-
-    if FFMPEG_DIR.exists():
-
-        for path in FFMPEG_DIR.rglob("ffprobe.exe"):
-            return path
-
-    return None
-
-
-def find_system_ffmpeg():
-
+    # Otherwise use FFmpeg installed on Windows PATH.
     ffmpeg = shutil.which("ffmpeg")
     ffprobe = shutil.which("ffprobe")
 
-    if ffmpeg and ffprobe:
-
-        return Path(ffmpeg), Path(ffprobe)
+    if (
+        ffmpeg
+        and ffprobe
+        and valid_executable(ffmpeg)
+        and valid_executable(ffprobe)
+    ):
+        return Path(ffmpeg).parent
 
     return None
 
 
-def verify_ffmpeg(ffmpeg, ffprobe):
+def download_ffmpeg(destination):
+    print("Downloading FFmpeg...")
+    print(FFMPEG_URL)
 
-    try:
+    curl = shutil.which("curl.exe")
 
+    if curl:
         result = subprocess.run(
-            [str(ffmpeg), "-version"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=10
+            [
+                curl,
+                "-L",
+                "--fail",
+                "--retry",
+                "3",
+                "--connect-timeout",
+                "30",
+                "--progress-bar",
+                "-o",
+                str(destination),
+                FFMPEG_URL,
+            ],
+            check=False,
         )
 
-        result2 = subprocess.run(
-            [str(ffprobe), "-version"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=10
-        )
-
-        return result.returncode == 0 and result2.returncode == 0
-
-    except Exception:
-
-        return False
-
-
-# ============================================================
-# Fast downloader
-# ============================================================
-
-def download_with_curl(url, destination):
-
-    curl = shutil.which("curl")
-
-    if not curl:
-        return False
-
-    print()
-    print("Using Windows curl downloader...")
-    print()
-    print(f"URL: {url}")
-    print()
-
-    command = [
-        curl,
-        "-L",
-        "--fail",
-        "--retry", "5",
-        "--retry-delay", "2",
-        "--connect-timeout", "20",
-        "--continue-at", "-",
-        "--progress-bar",
-        "-o",
-        str(destination),
-        url
-    ]
-
-    start = time.perf_counter()
-
-    result = subprocess.run(command)
-
-    elapsed = time.perf_counter() - start
-
-    if result.returncode != 0:
-
-        print()
-        print("curl download failed.")
-        return False
-
-    if destination.exists():
-
-        size_mb = destination.stat().st_size / (1024 * 1024)
-
-        if elapsed > 0:
-
-            speed = size_mb / elapsed
-
-            print()
-            print(
-                f"Downloaded {size_mb:.1f} MB "
-                f"in {elapsed:.1f}s "
-                f"({speed:.2f} MB/s)"
-            )
-
-        return True
-
-    return False
-
-
-def download_with_python(url, destination):
-
-    print()
-    print("Using Python downloader...")
-    print()
-    print(f"URL: {url}")
-    print()
-
-    start = time.perf_counter()
-    last_update = start
-    last_downloaded = 0
-
-    def progress(block_num, block_size, total_size):
-
-        nonlocal last_update
-        nonlocal last_downloaded
-
-        downloaded = block_num * block_size
-
-        if total_size > 0:
-
-            downloaded = min(downloaded, total_size)
-
-        now = time.perf_counter()
-
-        # Don't redraw too often
-        if now - last_update < 0.2:
+        if result.returncode == 0:
             return
 
-        elapsed = now - start
+        print("\ncurl failed. Trying Python downloader.")
 
-        speed = (
-            downloaded / elapsed
-            if elapsed > 0
-            else 0
-        )
-
-        if speed > 0 and total_size > 0:
-
-            remaining = total_size - downloaded
-            eta = remaining / speed
-
-        else:
-
-            eta = 0
-
-        if total_size > 0:
-
-            percent = downloaded * 100 / total_size
+    def progress(count, block_size, total):
+        if total > 0:
+            downloaded = count * block_size
+            percentage = min(
+                100,
+                downloaded * 100 / total,
+            )
 
             print(
-                f"\r{percent:6.2f}%  "
-                f"{downloaded / 1024 / 1024:7.1f} MB / "
-                f"{total_size / 1024 / 1024:7.1f} MB  "
-                f"{speed / 1024 / 1024:5.2f} MB/s  "
-                f"ETA {eta:6.1f}s",
+                f"\rDownloading: {percentage:.1f}%",
                 end="",
-                flush=True
+                flush=True,
             )
 
-        else:
-
-            print(
-                f"\r{downloaded / 1024 / 1024:7.1f} MB  "
-                f"{speed / 1024 / 1024:5.2f} MB/s",
-                end="",
-                flush=True
-            )
-
-        last_update = now
-        last_downloaded = downloaded
-
-    try:
-
-        urllib.request.urlretrieve(
-            url,
-            destination,
-            reporthook=progress
-        )
-
-        print()
-
-        elapsed = time.perf_counter() - start
-
-        if destination.exists():
-
-            size_mb = destination.stat().st_size / (
-                1024 * 1024
-            )
-
-            speed = (
-                size_mb / elapsed
-                if elapsed > 0
-                else 0
-            )
-
-            print(
-                f"Downloaded {size_mb:.1f} MB "
-                f"in {elapsed:.1f}s "
-                f"({speed:.2f} MB/s)"
-            )
-
-        return True
-
-    except Exception as e:
-
-        print()
-        print(f"Download failed: {e}")
-
-        return False
-
-
-def download_ffmpeg():
-
-    print()
-    print("Downloading FFmpeg...")
-    print()
-
-    # Reuse an existing complete download
-    if FFMPEG_ZIP.exists():
-
-        size_mb = FFMPEG_ZIP.stat().st_size / (
-            1024 * 1024
-        )
-
-        print(
-            f"Found existing download: "
-            f"{size_mb:.1f} MB"
-        )
-
-        print("Reusing it instead of downloading again.")
-
-        return True
-
-    # Prefer Windows curl
-    if download_with_curl(
+    urllib.request.urlretrieve(
         FFMPEG_URL,
-        FFMPEG_ZIP
-    ):
-
-        return True
-
-    # Fallback
-    print()
-    print("Falling back to Python downloader...")
-
-    return download_with_python(
-        FFMPEG_URL,
-        FFMPEG_ZIP
+        destination,
+        reporthook=progress,
     )
 
+    print()
 
-# ============================================================
-# FFmpeg installation
-# ============================================================
 
-def install_ffmpeg():
+def safe_extract(archive, destination):
+    destination = destination.resolve()
 
-    print_header("3. Checking FFmpeg")
+    for member in archive.infolist():
+        target = (
+            destination / member.filename
+        ).resolve()
 
-    # --------------------------------------------------------
-    # 1. Local project FFmpeg
-    # --------------------------------------------------------
+        if not target.is_relative_to(destination):
+            raise RuntimeError(
+                "Unsafe path found in FFmpeg ZIP."
+            )
 
-    local_ffmpeg = find_local_ffmpeg()
-    local_ffprobe = find_local_ffprobe()
+    archive.extractall(destination)
 
-    if local_ffmpeg and local_ffprobe:
 
-        if verify_ffmpeg(
-            local_ffmpeg,
-            local_ffprobe
+def setup_ffmpeg():
+    header("3. Checking FFmpeg")
+
+    existing = find_ffmpeg()
+
+    if existing:
+        print("FFmpeg already available:")
+        print(existing)
+        return existing
+
+    print("FFmpeg not found.")
+    print("Installing FFmpeg locally...")
+
+    with tempfile.TemporaryDirectory(
+        prefix="cactus_ffmpeg_"
+    ) as temporary:
+        temp = Path(temporary)
+        archive_path = temp / "ffmpeg.zip"
+        extracted = temp / "extracted"
+
+        extracted.mkdir()
+
+        download_ffmpeg(archive_path)
+
+        if not zipfile.is_zipfile(archive_path):
+            raise RuntimeError(
+                "Downloaded FFmpeg ZIP is invalid."
+            )
+
+        print("Extracting FFmpeg...")
+
+        with zipfile.ZipFile(archive_path) as archive:
+            safe_extract(archive, extracted)
+
+        candidates = list(
+            extracted.rglob("ffmpeg.exe")
+        )
+
+        if not candidates:
+            raise RuntimeError(
+                "ffmpeg.exe missing from archive."
+            )
+
+        source_bin = candidates[0].parent
+        source_probe = source_bin / "ffprobe.exe"
+
+        if not source_probe.is_file():
+            raise RuntimeError(
+                "ffprobe.exe missing from archive."
+            )
+
+        target_bin = FFMPEG_DIR / "bin"
+        target_bin.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        for filename in (
+            "ffmpeg.exe",
+            "ffprobe.exe",
+            "ffplay.exe",
         ):
+            source = source_bin / filename
 
-            print("FFmpeg already installed locally.")
+            if source.is_file():
+                shutil.copy2(
+                    source,
+                    target_bin / filename,
+                )
 
-            print(f"  ffmpeg : {local_ffmpeg}")
-            print(f"  ffprobe: {local_ffprobe}")
-
-            return local_ffmpeg
-
-    # --------------------------------------------------------
-    # 2. System FFmpeg
-    # --------------------------------------------------------
-
-    system = find_system_ffmpeg()
-
-    if system:
-
-        ffmpeg, ffprobe = system
-
-        print("FFmpeg already available in Windows PATH.")
-
-        print(f"  ffmpeg : {ffmpeg}")
-        print(f"  ffprobe: {ffprobe}")
-
-        return ffmpeg
-
-    # --------------------------------------------------------
-    # 3. Download
-    # --------------------------------------------------------
-
-    print("FFmpeg was not found.")
-
-    if not download_ffmpeg():
-
-        print()
-        print("ERROR: Could not download FFmpeg.")
-        sys.exit(1)
-
-    # --------------------------------------------------------
-    # 4. Extract
-    # --------------------------------------------------------
-
-    print()
-    print("Extracting FFmpeg...")
-
-    temp_extract = PROJECT_DIR / "_ffmpeg_extract"
-
-    if temp_extract.exists():
-
-        shutil.rmtree(temp_extract)
-
-    temp_extract.mkdir(
-        parents=True,
-        exist_ok=True
-    )
-
-    try:
-
-        with zipfile.ZipFile(
-            FFMPEG_ZIP,
-            "r"
-        ) as zip_ref:
-
-            zip_ref.extractall(temp_extract)
-
-    except zipfile.BadZipFile:
-
-        print()
-        print("ERROR: FFmpeg ZIP is corrupted.")
-        print()
-        print("Delete:")
-        print(f"  {FFMPEG_ZIP}")
-
-        sys.exit(1)
-
-    # --------------------------------------------------------
-    # Find executable
-    # --------------------------------------------------------
-
-    ffmpeg_exe = None
-    ffprobe_exe = None
-
-    for path in temp_extract.rglob(
-        "ffmpeg.exe"
+    if not (
+        valid_executable(target_bin / "ffmpeg.exe")
+        and valid_executable(target_bin / "ffprobe.exe")
     ):
-
-        ffmpeg_exe = path
-        break
-
-    for path in temp_extract.rglob(
-        "ffprobe.exe"
-    ):
-
-        ffprobe_exe = path
-        break
-
-    if not ffmpeg_exe or not ffprobe_exe:
-
-        print()
-        print(
-            "ERROR: ffmpeg.exe or "
-            "ffprobe.exe not found."
+        raise RuntimeError(
+            "FFmpeg verification failed."
         )
 
-        sys.exit(1)
-
-    extracted_root = ffmpeg_exe.parent.parent
-
-    # --------------------------------------------------------
-    # Install
-    # --------------------------------------------------------
-
-    if FFMPEG_DIR.exists():
-
-        shutil.rmtree(
-            FFMPEG_DIR
-        )
-
-    shutil.copytree(
-        extracted_root,
-        FFMPEG_DIR
-    )
-
-    # Cleanup extraction
-    shutil.rmtree(
-        temp_extract,
-        ignore_errors=True
-    )
-
-    # --------------------------------------------------------
-    # Verify
-    # --------------------------------------------------------
-
-    final_ffmpeg = find_local_ffmpeg()
-    final_ffprobe = find_local_ffprobe()
-
-    if not final_ffmpeg or not final_ffprobe:
-
-        print()
-        print("ERROR: FFmpeg installation failed.")
-        sys.exit(1)
-
-    if not verify_ffmpeg(
-        final_ffmpeg,
-        final_ffprobe
-    ):
-
-        print()
-        print("ERROR: FFmpeg verification failed.")
-        sys.exit(1)
-
-    print()
     print("FFmpeg installed successfully.")
-
-    print(f"  ffmpeg : {final_ffmpeg}")
-    print(f"  ffprobe: {final_ffprobe}")
-
-    # --------------------------------------------------------
-    # Keep ZIP as cache
-    # --------------------------------------------------------
-
-    print()
-    print("FFmpeg ZIP kept as local cache.")
-
-    return final_ffmpeg
+    return target_bin
 
 
 # ============================================================
-# BAT launcher
+# VERIFY INSTALLATION
 # ============================================================
 
-def create_launcher():
+def verify_installation(python, ffmpeg_bin):
+    header("4. Verifying installation")
 
-    print_header("4. Creating launcher")
+    run(
+        python,
+        "-c",
+        (
+            "import gradio; "
+            "import torch; "
+            "import huggingface_hub; "
+            "from cactus import Whistle; "
+            "print('Python dependencies OK')"
+        ),
+    )
 
-    python_exe = get_venv_python()
-    app_file = PROJECT_DIR / "app.py"
+    ffmpeg = ffmpeg_bin / "ffmpeg.exe"
+    ffprobe = ffmpeg_bin / "ffprobe.exe"
 
-    if not app_file.exists():
+    if not (
+        valid_executable(ffmpeg)
+        and valid_executable(ffprobe)
+    ):
+        raise RuntimeError(
+            "FFmpeg verification failed."
+        )
 
-        print()
-        print("WARNING: app.py was not found.")
-        print(f"Expected: {app_file}")
-        print()
+    print("FFmpeg OK")
+    print("Cactus runtime import OK")
 
-    ffmpeg_exe = find_local_ffmpeg()
 
-    if ffmpeg_exe is None:
+# ============================================================
+# WINDOWS LAUNCHER
+# ============================================================
 
-        system = find_system_ffmpeg()
+def create_launcher(python, ffmpeg_bin, use_venv):
+    header("5. Creating Windows launcher")
 
-        if system:
-            ffmpeg_exe = system[0]
+    mode = (
+        "Virtual Environment"
+        if use_venv
+        else "Current Python Environment"
+    )
 
-    if ffmpeg_exe is None:
+    # Escape percent signs because Windows BAT expands %VAR%.
+    project_path = str(ROOT).replace("%", "%%")
+    python_path = str(python).replace("%", "%%")
+    app_path = str(APP).replace("%", "%%")
+    ffmpeg_path = str(ffmpeg_bin).replace("%", "%%")
 
-        print("ERROR: FFmpeg executable not found.")
-        sys.exit(1)
-
-    ffmpeg_bin = ffmpeg_exe.parent
-
-    project_path = str(PROJECT_DIR)
-    python_path = str(python_exe)
-    app_path = str(app_file)
-    ffmpeg_bin_path = str(ffmpeg_bin)
-
-    bat_content = f"""@echo off
+    content = f"""@echo off
 setlocal
-
-title Needle Subtitle
+title Cactus Compute Subtitle
 
 echo.
-echo ============================================================
-echo              Needle Subtitle
-echo ============================================================
+echo ==========================================================
+echo                  CACTUS COMPUTE SUBTITLE
+echo ==========================================================
+echo.
+echo Python Mode: {mode}
 echo.
 
 cd /d "{project_path}"
+set "PATH={ffmpeg_path};%PATH%"
+set "PYTHONUTF8=1"
 
-set "PATH={ffmpeg_bin_path};%PATH%"
-
-echo Project:
-echo   {project_path}
-echo.
-
-echo Starting application...
+echo Starting subtitle generator...
 echo.
 
 "{python_path}" "{app_path}"
 
+set "EXIT_CODE=%ERRORLEVEL%"
+
 echo.
-echo ============================================================
-echo Application closed.
-echo ============================================================
+echo ==========================================================
+echo Application closed. Exit code: %EXIT_CODE%
+echo ==========================================================
 echo.
 
 pause
+exit /b %EXIT_CODE%
 """
 
-    BAT_FILE.write_text(
-        bat_content,
-        encoding="utf-8"
+    LAUNCHER.write_text(
+        content,
+        encoding="utf-8",
     )
 
-    print()
     print("Launcher created:")
-    print(f"  {BAT_FILE}")
+    print(LAUNCHER)
+    print("Python mode:", mode)
 
 
 # ============================================================
-# Main
+# MAIN INSTALLER
 # ============================================================
 
 def main():
-
-    print()
-    print("=" * 70)
-    print("        Needle Subtitle - Windows Installer")
-    print("=" * 70)
-    print()
-
-    print("Project directory:")
-    print(f"  {PROJECT_DIR}")
-    print()
-
-    if os.name != "nt":
-
-        print(
-            "WARNING: This installer is designed "
-            "for Windows."
-        )
-
-    # 1
-    create_virtual_environment()
-
-    # 2
-    install_requirements()
-
-    # 3
-    install_ffmpeg()
-
-    # 4
-    create_launcher()
-
-    print_header(
-        "INSTALLATION COMPLETE"
+    header(
+        "CACTUS COMPUTE SUBTITLE - WINDOWS INSTALLER"
     )
 
-    print("Your project is ready!")
-    print()
+    check_windows()
+    check_project()
 
-    print("Created / available:")
-    print("  .venv/")
-    print("  FFmpeg/")
-    print("  run_needle_subtitle.bat")
-    print()
+    print("Project:", ROOT)
+    print("Python:", sys.version.split()[0])
 
-    print("Start the application with:")
-    print()
-    print("  run_needle_subtitle.bat")
-    print()
+    use_venv = choose_environment()
 
-    print("You do NOT need to:")
-    print("  - activate the virtual environment")
-    print("  - install FFmpeg manually")
-    print("  - add FFmpeg to Windows PATH")
-    print("  - manually install Python packages")
+    python = setup_python(use_venv)
+
+    install_dependencies(python)
+
+    ffmpeg_bin = setup_ffmpeg()
+
+    verify_installation(
+        python,
+        ffmpeg_bin,
+    )
+
+    create_launcher(
+        python,
+        ffmpeg_bin,
+        use_venv,
+    )
+
+    header("INSTALLATION COMPLETE")
+
+    print("Everything is ready!")
     print()
+    print("Python:", python)
+    print(
+        "Virtual environment:",
+        "YES" if use_venv else "NO",
+    )
+    print()
+    print("Start the application using:")
+    print("  run_cactus_subtitle.bat")
+    print()
+    print(
+        "Models will download automatically "
+        "when you select a language for the first time."
+    )
+    print()
+    print("Project:", ROOT)
 
 
 if __name__ == "__main__":
-
     try:
-
         main()
 
     except KeyboardInterrupt:
+        print("\nInstallation cancelled.")
+        sys.exit(130)
 
-        print()
-        print()
-        print("Installation cancelled by user.")
+    except Exception as error:
+        header("INSTALLATION FAILED")
+        print(f"\nError: {error}")
         sys.exit(1)
 
-    except Exception as e:
-
-        print()
-        print("=" * 70)
-        print("INSTALLATION FAILED")
-        print("=" * 70)
-        print()
-        print(f"Error: {e}")
-        print()
-
-        input(
-            "Press Enter to exit..."
-        )
-
-        sys.exit(1)
-```
+    finally:
+        if os.name == "nt" and sys.stdin.isatty():
+            input("\nPress Enter to exit...")
